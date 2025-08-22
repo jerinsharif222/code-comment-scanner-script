@@ -98,11 +98,11 @@ search_files() {
     echo "Seaching for files with extention $1..."
     local total_count=$(find . -maxdepth 1 -type f -name "*$1"| wc -l)
     echo "There are $total_count total. Beginning search..."
-    declare -i curr_count=0
+    declare -i curr_count=1
     local patterns=${@:2}
 	for file in *"$1"; do
         if [ -f "$file" ]; then
-            echo "($file = $curr_count / $total_count )"
+            echo -e "( $curr_count / $total_count ) Searching \"${file:0:15}\"..."
             debug_search_files "$file" ${patterns[@]}
             search_file "$file" ${patterns[@]}
             curr_count+=1
