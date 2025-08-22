@@ -40,13 +40,27 @@ declare -i IS_COMMENTED=$FALSE
 #
 # For comment blocks, use DELIMITER between regex to delimit the beginning and end value.
 # EXAMPLE : "^#", "''';'''"
-PYTHON=(".py" "^#" "'''$DELIMITER'''" "\/\*$DELIMITER\*\/")
+PYTHON=(".py" "^#" "'''$DELIMITER'''")
+ADA_A=(".a" "^--")
+ADA_ADB=(".adb" "^--")
+ADA_ADS=(".ads" "^--")
+PASCAL=( ".pas" "^//" "\{$DELIMITER\}" "\(\*$DELIMITER\*\)" )
+C=(".c" "^//" "/\*$DELIMITER\*/")
+CPP=(".cpp" "^//" "/\*$DELIMITER\*/")
+HEADER=(".h" "^//" "/\*$DELIMITER\*/")
 
 # Main function. Total non-blank lines account for all non-empty lines (I.E. new lines), including
 # commented lines.
 main() { 
     cd "$SEARCH_DIR" || { echo "Error: Directory not found."; exit 1; }
-    search_files ${PYTHON[@]}
+    #search_files ${PYTHON[@]}
+    #search_files ${ADA_A[@]}
+    #search_files ${ADA_ADB[@]}
+    #search_files ${ADA_ADS[@]}
+    search_files ${PASCAL[@]}
+    #search_files ${C[@]}
+    #search_files ${CPP[@]}
+    #search_files ${HEADER[@]}
     echo "==========================================="
     echo "Results "
     echo ""
@@ -302,7 +316,7 @@ debug_control_comment_block_locked() {
 attempt_unlock() {
     local line=$1
     local end_block_pattern=$2
-    if [[ $line =~ ^$end_block_pattern ]]; then
+    if [[ $line =~ $end_block_pattern ]]; then
         debug_attempt_unlock $end_block_pattern
         COMMENT_BLOCK_LOCK=$FALSE
     fi
