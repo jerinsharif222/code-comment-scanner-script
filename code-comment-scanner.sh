@@ -9,7 +9,7 @@ SEARCH_DIR="."
 
 # Initializes true and false global constants.
 declare -i TRUE=0
-declare -i FALSE=-1
+declare -i FALSE=1
 
 # Debug mode.
 DEBUG=$FALSE
@@ -29,8 +29,9 @@ DELIMITER=";"
 declare -i COMMENTED_LINES=0
 declare -i NONBLANK_LINES=0
 
-# Initializes lock for comment blocks
+# Initializes lock for comment blocks / flag for comment count.
 declare -i COMMENT_BLOCK_LOCK=$FALSE
+declare -i IS_COMMENTED=$FALSE
 
 # Arguments for each language.
 #
@@ -39,7 +40,7 @@ declare -i COMMENT_BLOCK_LOCK=$FALSE
 #
 # For comment blocks, use DELIMITER between regex to delimit the beginning and end value.
 # EXAMPLE : "^#", "''';'''"
-PYTHON=(".py" "^#" "'''$DELIMITER'''")
+PYTHON=(".py" "^#" "'''$DELIMITER'''" "\/\*$DELIMITER\*\/")
 
 # Main function. Total non-blank lines account for all non-empty lines (I.E. new lines), including
 # commented lines.
@@ -168,9 +169,13 @@ debug_search_file() {
 search_line() {
     local line=$1
     local patterns=${@:2}
+    local IS_COMMENTED=$FALSE
     for pattern in $patterns; do
-        search_pattern "$line" "$pattern" 
+        search_pattern "$line" "$pattern"
     done
+    if [ $IS_COMMENTED = $TRUE ]; then
+        comment_count_incr
+    fi
 }
 
 
@@ -202,7 +207,7 @@ search_normal_comment() {
     local pattern=$2
     if [[ $line =~ $pattern ]]; then
         debug_search_normal_comment $pattern
-        comment_count_incr
+        IS_COMMENTED=$TRUE
     fi
 }
 
@@ -234,9 +239,9 @@ search_block_comment() {
     local block_patterns=($(delimit_pattern $pattern))
     local begin_block_pattern=${block_patterns[0]}
     local end_block_pattern=${block_patterns[1]}
-    if is_single_lined_comment_block $line $begin_block_pattern $end_block_pattern; then
+    if is_single_lined_comment_block "$line" $begin_block_pattern $end_block_pattern; then
         debug_single_lined_comment_block $pattern
-        comment_count_incr
+        IS_COMMENTED=$TRUE
     else
         control_comment_block_lock "$line" $begin_block_pattern $end_block_pattern
     fi
@@ -268,12 +273,12 @@ control_comment_block_lock() {
     local begin_block_pattern=$2
     local end_block_pattern=$3
     if [[ $COMMENT_BLOCK_LOCK = $TRUE ]]; then
-        comment_count_incr
         attempt_unlock "$line" $end_block_pattern
+        IS_COMMENTED=$TRUE
     elif [[ $line =~ ^$begin_block_pattern ]]; then
         debug_control_comment_block_locked $begin_block_pattern
-        comment_count_incr
         COMMENT_BLOCK_LOCK=$TRUE
+        IS_COMMENTED=$TRUE
     fi
 }
 
