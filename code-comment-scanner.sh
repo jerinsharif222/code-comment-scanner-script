@@ -391,6 +391,7 @@ comment_count_incr() {
     debug_comment_count_incr
     COMMENTED_LINES+=1
 }
+
  # Debug comment_count_incr.
 debug_comment_count_incr() {
     if [ $DEBUG = 0 ]; then
