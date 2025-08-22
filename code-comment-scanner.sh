@@ -7,8 +7,12 @@
 # Directory to search. Defaults to current location.
 SEARCH_DIR="."
 
-# Debug mode. 0 will print debug statements.
-DEBUG=1
+# Initializes true and false global constants.
+declare -i TRUE=0
+declare -i FALSE=-1
+
+# Debug mode.
+DEBUG=$FALSE
 
 # Delimiter to separate comment block regex.
 #
@@ -25,9 +29,8 @@ DELIMITER=";"
 declare -i COMMENTED_LINES=0
 declare -i NONBLANK_LINES=0
 
-# Initializes lock state constants. These are used as custom return values.
-declare -i LOCK=24
-declare -i UNLOCK=23
+# Initializes lock for comment blocks
+declare -i COMMENT_BLOCK_LOCK=$FALSE
 
 # Arguments for each language.
 #
@@ -38,10 +41,10 @@ declare -i UNLOCK=23
 # EXAMPLE : "^#", "''';'''"
 PYTHON=(".py" "^#" "'''$DELIMITER'''")
 
-
 # Main function. Total non-blank lines account for all non-empty lines (I.E. new lines), including
 # commented lines.
-main() {
+main() { 
+    cd "$SEARCH_DIR" || { echo "Error: Directory not found."; exit 1; }
     search_files ${PYTHON[@]}
     echo "==========================================="
     echo "Results "
@@ -49,7 +52,6 @@ main() {
     echo "Total non-blank lines : $NONBLANK_LINES"
     echo "Total commented lines : $COMMENTED_LINES"
 }
-
 
 # Usage function. Prints how to use this script to user.
 usage() {
@@ -86,17 +88,25 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Loops through files with specific extension and runs regex on patterns.
+# Switches Internal Field Separator (IFS) to get all files regardless of spaces.
 # search_files(String type, Array<String> patterns)
 #
 # String type : Extention type.  (STRING)
 #
 # Array<Strings> patterns : Array of patterns. (STRINGS)
 search_files() {
-	local files=$(find $SEARCH_DIR -type f -name "*$1")
+    echo "Seaching for files with extention $1..."
+    local total_count=$(find . -maxdepth 1 -type f -name "*$1"| wc -l)
+    echo "There are $total_count total. Beginning search..."
+    declare -i curr_count=0
     local patterns=${@:2}
-	for file in $files; do
-        debug_search_files $file ${patterns[@]}
-		search_file $file ${patterns[@]}
+	for file in *"$1"; do
+        if [ -f "$file" ]; then
+            echo "($file = $curr_count / $total_count )"
+            debug_search_files "$file" ${patterns[@]}
+            search_file "$file" ${patterns[@]}
+            curr_count+=1
+        fi
 	done
 }
 
@@ -127,66 +137,24 @@ debug_search_files() {
 search_file() {
 	local file=$1
     local patterns=${@:2}
-    local comment_block_lock=$UNLOCK
 	while read line; do
-        debug_search_file "$line" $comment_block_lock
+        debug_search_file "$line" 
         if is_blank $line; then continue; fi
         NONBLANK_LINES+=1
-        search_line "$line" $comment_block_lock $patterns
-        set_comment_block_lock $comment_block_lock $?
-        comment_block_lock=$?
-	done <$file
+        search_line "$line" $patterns
+	done <"$file"
 }
 
 # Debug for search_file.
-# debug_search_file(String line, Integer comment_block_lock)
+# debug_search_file(String line)
 #
 # String line : String of an individual line. (STRING)
-#
-# Integer comment_block_lock : State of comment block lock. Changes what to search for. (INTEGER)
 debug_search_file() {
     local line=$1
-    local comment_block_lock=$2
     if [ $DEBUG = 0 ]; then
         echo "| $line"
-        if [ $comment_block_lock = $LOCK ]; then
+        if [[ $COMMENT_BLOCK_LOCK = $TRUE ]]; then
         echo "| | Currently locked inside of comment block!"
-        fi
-    fi
-}
-
-# Checks last return code and attempts to lock or unlock comment_block_lock. This
-# is important because it controls the logic of counting comment blocks.
-# set_comment_block_lock(Integer last_code, Integer new_code)
-#
-# Integer last_code : last state lock was in. (INTEGER)
-#
-# Integer new_code : new potential state to put lock into. 
-# NOTE: Typically $? returns the last functions end state (success = 0, failure = 1). That
-# logic is being abused to return a value from child function calls since that return value can be
-# between 0-255, so LOCK and UNLOCK are custom return values.
-set_comment_block_lock() {
-    local last_code=$1
-    local new_code=$2
-    if [[ $new_code = $LOCK || $new_code = $UNLOCK ]]; then
-        debug_set_comment_block_lock $new_code
-        return $new_code
-    else
-        return $last_code
-    fi
-}
-
-# Debug for set_comment_block_lock.
-# debug_set_comment_block_lock(Integer comment_block_lock)
-#
-# Integer comment_block_lock : State of comment block lock. Changes what to search for. (INTEGER)
-debug_set_comment_block_lock() {
-    local comment_block_lock=$1
-    if [ $DEBUG = 0 ]; then
-        if [ $comment_block_lock = $LOCK ]; then
-            echo "| | | | Just entered code block!"
-        else 
-            echo "| | | | Just exited code block!"
         fi
     fi
 }
@@ -195,36 +163,30 @@ debug_set_comment_block_lock() {
 # search_line(String line, Integer comment_block_lock, Array<String> patterns)
 #
 # String line : String of an individual line. (STRING)
-#
-# Integer comment_block_lock : State of comment block lock. Changes what to search for. (INTEGER)
 # 
 # Array<Strings> patterns : Array of patterns. (STRINGS)
 search_line() {
     local line=$1
-    local comment_block_lock=$2
-    local patterns=${@:3}
+    local patterns=${@:2}
     for pattern in $patterns; do
-        search_pattern "$line" $comment_block_lock "$pattern" 
+        search_pattern "$line" "$pattern" 
     done
 }
 
 
 # Searches pattern within a line. Will use comment block methods if there is a delimiter
 # and will avoid detecting normal comments if within a comment block.
-# search_line(String line, Integer comment_block_lock, String pattern)
+# search_line(String line, String pattern)
 #
 # String line : String of an individual line. (STRING)
-#
-# Integer comment_block_lock : State of comment block lock. Changes what to search for. (INTEGER)
 # 
 # Strings pattern : Pattern to search for. (STRING)
 search_pattern() {
     local line=$1
-    local comment_block_lock=$2
-    local pattern=$3
+    local pattern=$2
     if [[ $pattern =~ $DELIMITER ]]; then
-        search_block_comment "$line" $comment_block_lock "$pattern"
-    elif [ $comment_block_lock = $UNLOCK ]; then
+        search_block_comment "$line" "$pattern"
+    elif [[ $COMMENT_BLOCK_LOCK = $FALSE ]]; then
         search_normal_comment "$line" "$pattern"
     fi
 }
@@ -268,12 +230,11 @@ debug_search_normal_comment() {
 # Strings pattern : Pattern to search for. (STRING)
 search_block_comment() {
     local line=$1
-    local comment_block_lock=$2
-    local pattern=$3
+    local pattern=$2
     local block_patterns=($(delimit_pattern $pattern))
     local begin_block_pattern=${block_patterns[0]}
     local end_block_pattern=${block_patterns[1]}
-    if is_single_lined_comment_block $begin_block_pattern $end_block_pattern; then
+    if is_single_lined_comment_block $line $begin_block_pattern $end_block_pattern; then
         debug_single_lined_comment_block $pattern
         comment_count_incr
     else
@@ -306,13 +267,13 @@ control_comment_block_lock() {
     local line=$1
     local begin_block_pattern=$2
     local end_block_pattern=$3
-    if [ $comment_block_lock = $LOCK ]; then
+    if [[ $COMMENT_BLOCK_LOCK = $TRUE ]]; then
         comment_count_incr
         attempt_unlock "$line" $end_block_pattern
     elif [[ $line =~ ^$begin_block_pattern ]]; then
         debug_control_comment_block_locked $begin_block_pattern
         comment_count_incr
-        return $LOCK
+        COMMENT_BLOCK_LOCK=$TRUE
     fi
 }
 
@@ -338,7 +299,7 @@ attempt_unlock() {
     local end_block_pattern=$2
     if [[ $line =~ ^$end_block_pattern ]]; then
         debug_attempt_unlock $end_block_pattern
-        return $UNLOCK
+        COMMENT_BLOCK_LOCK=$FALSE
     fi
 }
 
@@ -360,8 +321,9 @@ debug_attempt_unlock() {
 #
 # Strings end_block_pattern : End of comment block pattern to search for. (STRING)
 is_single_lined_comment_block() {
-    local begin_block_pattern=$1
-    local end_block_pattern=$2
+    local line=$1
+    local begin_block_pattern=$2
+    local end_block_pattern=$3
     [[ $line =~ ^$begin_block_pattern ]] && [[ ${line:${#begin_block_pattern}} =~ $end_block_pattern ]]
 }
 
