@@ -2,7 +2,9 @@
 # Jerin Sharif - Aug 21, 2025
 
 # This script searches for comments in a code base. It will
-# go through each listed file and related comments.
+# find comment blocks and regular comments for the listed
+# languages. It also traverses through each file in the 
+# directory and any subdirectories.
 
 # Directory to search. Defaults to current location.
 SEARCH_DIR="."
@@ -24,6 +26,10 @@ DEBUG=$FALSE
 #   would be counted.
 #   '''
 DELIMITER=";"
+
+# Types of IFS.
+DEFAULT_IFS=$IFS
+NEWLINE_IFS=$'\n'
 
 # Initializes commented lines and non-blank lines at count 0.
 declare -i COMMENTED_LINES=0
@@ -110,19 +116,33 @@ done
 #
 # Array<Strings> patterns : Array of patterns. (STRINGS)
 search_files() {
-    echo "Seaching for files with extention $1..."
-    local total_count=$(find . -maxdepth 1 -type f -name "*$1"| wc -l)
-    echo "There are $total_count total. Beginning search..."
-    declare -i curr_count=1
+    local file_type=$1
     local patterns=${@:2}
-	for file in *"$1"; do
+    IFS=$NEWLINE_IFS
+    echo "Seaching for files with extention $file_type..."
+    local files=$(find_files $file_type)
+    local files_count=$(count_files $file_type)
+    echo "There are $files_count $file_type files total. Beginning search..."
+    declare -i curr_count=1
+	for file in $files; do
+        IFS=$DEFAULT_IFS
         if [ -f "$file" ]; then
-            echo -e "( $curr_count / $total_count ) Searching \"${file:0:15}\"..."
+            echo -e "( $curr_count / $files_count ) Searching \"${file:0:15}\"..."
             debug_search_files "$file" ${patterns[@]}
             search_file "$file" ${patterns[@]}
             curr_count+=1
         fi
+        IFS=$NEWLINE_IFS
 	done
+}
+
+find_files() {
+    echo  "$(find . -type f -name "*$file_type")"
+}
+
+
+count_files() {
+    echo  "$(find . -type f -name "*$file_type" | wc -l)"
 }
 
 # Debug for search_files.
@@ -355,6 +375,7 @@ delimit_pattern() {
     IFS=$DELIMITER read -ra split <<<$pattern
     local begin_pattern="${split[0]}"
     local end_pattern="${split[1]}"
+    IFS=$DEFAULT_IFS
     echo "$begin_pattern $end_pattern"
 }
 
