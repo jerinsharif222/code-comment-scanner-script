@@ -2,9 +2,7 @@
 # Jerin Sharif - Aug 21, 2025
 
 # This script searches for comments in a code base. It will
-# find comment blocks and regular comments for the listed
-# languages. It also traverses through each file in the 
-# directory and any subdirectories.
+# go through each listed file and related comments.
 
 # Directory to search. Defaults to current location.
 SEARCH_DIR="."
@@ -25,13 +23,7 @@ DEBUG=$FALSE
 #   in python that all lines
 #   would be counted.
 #   '''
-#
-#   '''This would count too '''
 DELIMITER=";"
-
-# Types of IFS.
-DEFAULT_IFS=$IFS
-NEWLINE_IFS=$'\n'
 
 # Initializes commented lines and non-blank lines at count 0.
 declare -i COMMENTED_LINES=0
@@ -47,7 +39,7 @@ declare -i IS_COMMENTED=$FALSE
 # [1:]  is regular expressions to check for
 #
 # For comment blocks, use DELIMITER between regex to delimit the beginning and end value.
-# EXAMPLE : "^#", "'''$DELIMITER'''"
+# EXAMPLE : "^#", "''';'''"
 PYTHON=(".py" "^#" "'''$DELIMITER'''")
 ADA_A=(".a" "^--")
 ADA_ADB=(".adb" "^--")
@@ -118,62 +110,32 @@ done
 #
 # Array<Strings> patterns : Array of patterns. (STRINGS)
 search_files() {
-    local file_type=$1
-    local patterns=${@:2}
-    set_delimiter_newline
-    echo "Seaching for files with extention $file_type."
-    local files=$(find_files $file_type)
-    local files_count=$(count_files $file_type)
-    echo "There are $files_count $file_type files total. Beginning search."
+    echo "Seaching for files with extention $1..."
+    local total_count=$(find . -type f -name "*$1"| wc -l)
+    local files_of_curr_type=$(find "$SEARCH_DIR" -type f -name "*$1")
+    echo "There are $total_count total. Beginning search..."
     declare -i curr_count=1
-	for file in $files; do
-        set_delimiter_default
-        echo -e "( $curr_count / $files_count ) Searching \"...${file: -15}\""
-        search_file "$file" ${patterns[@]}
-        set_delimiter_newline
-        curr_count+=1
+    local patterns=${@:2}
+    for file in $files_of_curr_type; do
+        if [ -f "$file" ]; then
+            echo -e "( $curr_count / $total_count ) Searching \"${file:0:15}\"..."
+            debug_search_files "$file" ${patterns[@]}
+            search_file "$file" ${patterns[@]}
+            curr_count+=1
+        fi
 	done
-}  
-
-# Sets IFS to the new line character. This is useful for ignoring spaces.
-set_delimiter_newline() {
-    IFS=$NEWLINE_IFS
 }
 
-# Sets IFS to its default value for normal operations.
-set_delimiter_default() {
-    IFS=$DEFAULT_IFS
-}
-
-# Sets IFS to the DELIMITER global variable. This helps seperate the beginning and end patterns.
-set_delimiter_custom() {
-    IFS=$DELIMITER read -ra split <<<$pattern
-}
-
-# Finds files under file_types
-find_files() {
-    local file_types=$1
-    echo  "$(find . -type f -name "*$file_type")"
-}
-
-# Counts files under file_types. 
-# NOTE: For some reason 'find' does not return an array of files
-# but is still iterable as if it was.
-count_files() {
-    local file_types=$1
-    echo  "$(find . -type f -name "*$file_type" | wc -l)"
-}
-
-# Debug for searching a file.
-# debug_search_file(File file, Array<String> patterns)
+# Debug for search_files.
+# debug_search_files(File file, Array<String> patterns)
 #
 # File file : Passed file. (FILE)
 #
 # Array<Strings> patterns : Array of patterns. (STRINGS)
-debug_search_file() {
+debug_search_files() {
     local file=$1
     local patterns=${@:2}
-    if [ $DEBUG = $TRUE ]; then
+    if [ $DEBUG = 0 ]; then
         echo "==========================================="
         echo "Searching file $file..."
         echo ""
@@ -191,31 +153,30 @@ debug_search_file() {
 search_file() {
 	local file=$1
     local patterns=${@:2}
-    debug_search_file "$file" ${patterns[@]}
 	while read line; do
-        debug_search_line "$line" 
+        debug_search_file "$line" 
         if is_blank $line; then continue; fi
         NONBLANK_LINES+=1
         search_line "$line" $patterns
 	done <"$file"
 }
 
-# Debug for searching a line.
-# debug_search_line(String line)
+# Debug for search_file.
+# debug_search_file(String line)
 #
 # String line : String of an individual line. (STRING)
-debug_search_line() {
+debug_search_file() {
     local line=$1
     if [ $DEBUG = 0 ]; then
         echo "| $line"
-        if [ $COMMENT_BLOCK_LOCK = $TRUE ]; then
+        if [[ $COMMENT_BLOCK_LOCK = $TRUE ]]; then
         echo "| | Currently locked inside of comment block!"
         fi
     fi
 }
 
 # Loops through patterns and runs regex with a specific line.
-# search_line(String line, Array<String> patterns)
+# search_line(String line, Integer comment_block_lock, Array<String> patterns)
 #
 # String line : String of an individual line. (STRING)
 # 
@@ -223,7 +184,7 @@ debug_search_line() {
 search_line() {
     local line=$1
     local patterns=${@:2}
-    IS_COMMENTED=$FALSE
+    local IS_COMMENTED=$FALSE
     for pattern in $patterns; do
         search_pattern "$line" "$pattern"
     done
@@ -245,7 +206,7 @@ search_pattern() {
     local pattern=$2
     if [[ $pattern =~ $DELIMITER ]]; then
         search_block_comment "$line" "$pattern"
-    elif [ $COMMENT_BLOCK_LOCK = $FALSE ]; then
+    elif [[ $COMMENT_BLOCK_LOCK = $FALSE ]]; then
         search_normal_comment "$line" "$pattern"
     fi
 }
@@ -265,24 +226,26 @@ search_normal_comment() {
     fi
 }
 
-# Debug for searching a normal comment.
+# Debug for search_normal_comment.
 # debug_search_normal_comment(String pattern)
 # 
 # Strings pattern : Pattern to search for. (STRING)
 debug_search_normal_comment() {
     local pattern=$1
-    if [ $DEBUG = $TRUE ]; then
+    if [ $DEBUG = 0 ]; then
         echo "| | Found pattern $pattern! (Traditional Comment)"
     fi
 }
 
 # Searches for comment block pattern. If it is an inline / single line comment
-# block then it will exit immidiately, count the line and not lock.
+# block then it will exit immidiately, count the line and not lock the comment_block_lock.
 # Otherwise it will pass to the function for managing the comment block lock code.
 # This code also sends the pattern to be delimited.
-# search_block_comment(String line, String pattern)
+# search_block_comment(String line, Integer comment_block_lock, String pattern)
 #
 # String line : String of an individual line. (STRING)
+#
+# Integer comment_block_lock : State of comment block lock. Changes what to search for. (INTEGER)
 # 
 # Strings pattern : Pattern to search for. (STRING)
 search_block_comment() {
@@ -299,7 +262,7 @@ search_block_comment() {
     fi
 }
 
-# Debug for single lined comment block logic.
+# Debug for single_lined_comment_block logic.
 # debug_single_lined_comment_block(String pattern)
 # 
 # Strings pattern : Pattern to search for. (STRING)
@@ -311,7 +274,7 @@ debug_single_lined_comment_block() {
 }
 
 # Manages comment block lock code and logic for adding each line within a comment block.
-# It will lock COMMENT_BLOCK_LOCK if it is in a comment block and unlock on exit. This lock 
+# It will lock comment_block_lock if it is in a comment block and unlock on exit. This lock 
 # will add each line to the comment count when locked.
 # control_comment_block_lock(String line, String begin_block_pattern, String end_block_pattern)
 #
@@ -324,7 +287,7 @@ control_comment_block_lock() {
     local line=$1
     local begin_block_pattern=$2
     local end_block_pattern=$3
-    if [ $COMMENT_BLOCK_LOCK = $TRUE ]; then
+    if [[ $COMMENT_BLOCK_LOCK = $TRUE ]]; then
         attempt_unlock "$line" $end_block_pattern
         IS_COMMENTED=$TRUE
     elif [[ $line =~ ^$begin_block_pattern ]]; then
@@ -334,7 +297,7 @@ control_comment_block_lock() {
     fi
 }
 
-# Debug for comment block logic.
+# Debug for debug_control_comment_block_locked logic.
 # debug_control_comment_block_locked(String pattern)
 # 
 # Strings pattern : Pattern to search for. (STRING)
@@ -345,7 +308,7 @@ debug_control_comment_block_locked() {
     fi
 }
 
-# Attempts exiting comment block via unlocking the COMMENT_BLOCK_LOCK.
+# Attempts exiting comment block via unlocking the comment_block_lock.
 # attempt_unlock(String line, String end_block_pattern)
 #
 # String line : String of an individual line. (STRING)
@@ -360,7 +323,7 @@ attempt_unlock() {
     fi
 }
 
-# Debug for unlock logic.
+# Debug for debug_attempt_unlock logic.
 # debug_attempt_unlock(String pattern)
 # 
 # Strings pattern : Pattern to search for. (STRING)
@@ -390,10 +353,9 @@ is_single_lined_comment_block() {
 # Strings pattern : Pattern to delimit. (STRING)
 delimit_pattern() {
     local pattern=$1
-    set_delimiter_custom
+    IFS=$DELIMITER read -ra split <<<$pattern
     local begin_pattern="${split[0]}"
     local end_pattern="${split[1]}"
-    set_delimiter_default
     echo "$begin_pattern $end_pattern"
 }
 
@@ -410,9 +372,10 @@ is_blank() {
 comment_count_incr() {
     debug_comment_count_incr
     COMMENTED_LINES+=1
+    echo "Comment #: $COMMENTED_LINES"
 }
 
- # Debug comment count incrementation.
+ # Debug comment_count_incr.
 debug_comment_count_incr() {
     if [ $DEBUG = 0 ]; then
         echo "| | | This is a commented line!"
@@ -421,3 +384,4 @@ debug_comment_count_incr() {
 
 # Run main
 main
+
